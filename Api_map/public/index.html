@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Mapa de Geolocalización - Leaflet</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+        #sidebar { width: 350px; padding: 20px; border-right: 1px solid #ccc; overflow-y: auto; }
+        #map { flex-grow: 1; height: 100%; }
+        .control { margin-bottom: 15px; }
+        input { width: 100px; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>Control de Ruta</h2>
+    <div class="control">
+        <label>Origen (Lat, Lon):</label><br>
+        <input id="oLat" value="-16.4140"> <input id="oLon" value="-71.5157">
+    </div>
+    <div class="control">
+        <label>Destino (Lat, Lon):</label><br>
+        <input id="dLat" value="-16.4065"> <input id="dLon" value="-71.5531">
+    </div>
+    <button onclick="consultar()">Trazar Ruta</button>
+    <hr>
+    <div id="info">
+        <p>Distancia: <b id="dist">--</b> km</p>
+        <p>Tiempo: <b id="tiempo">--</b> min</p>
+        <p><small id="dirO"></small></p>
+        <p><small id="dirD"></small></p>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // Inicializar mapa centrado en Arequipa
+    const map = L.map('map').setView([-16.409, -71.537], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let rutaCapa; // Variable para guardar la línea de la ruta
+    let marcadores = [];
+
+    async function consultar() {
+        const [olat, olon, dlat, dlon] = ['oLat', 'oLon', 'dLat', 'dLon'].map(id => document.getElementById(id).value);
+
+        try {
+            // 1. Obtener Direcciones y Ruta
+            const [resO, resD, resR] = await Promise.all([
+                fetch(`/api/geocode?lat=${olat}&lon=${olon}`).then(r => r.json()),
+                fetch(`/api/geocode?lat=${dlat}&lon=${dlon}`).then(r => r.json()),
+                fetch(`/api/ruta?oLat=${olat}&oLon=${olon}&dLat=${dlat}&dLon=${dlon}`).then(r => r.json())
+            ]);
+
+            // Actualizar textos
+            document.getElementById('dirO').innerText = "Origen: " + resO.direccion;
+            document.getElementById('dirD').innerText = "Destino: " + resD.direccion;
+            document.getElementById('dist').innerText = resR.distancia_km;
+            document.getElementById('tiempo').innerText = resR.duracion_min;
+
+            // 2. Dibujar en el Mapa
+            // Limpiar mapa anterior
+            if (rutaCapa) map.removeLayer(rutaCapa);
+            marcadores.forEach(m => map.removeLayer(m));
+            marcadores = [];
+
+            // Dibujar línea de ruta
+            rutaCapa = L.geoJSON(resR.geometria, { color: 'blue' }).addTo(map);
+            
+            // Añadir marcadores
+            marcadores.push(L.marker([olat, olon]).addTo(map).bindPopup("Origen"));
+            marcadores.push(L.marker([dlat, dlon]).addTo(map).bindPopup("Destino"));
+
+            // Ajustar vista para que se vea toda la ruta
+            map.fitBounds(rutaCapa.getBounds());
+
+        } catch (e) {
+            alert("Error al consultar: " + e.message);
+        }
+    }
+</script>
+</body>
+</html>
