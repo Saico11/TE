@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laboratorio Geolocalización - UCSM</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; margin: 0; }
+        #sidebar { width: 380px; padding: 25px; border-right: 1px solid #ddd; overflow-y: auto; background-color: #f8f9fa; }
+        #map { flex-grow: 1; height: 100%; }
+        .input-group { margin-bottom: 20px; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; }
+        input { width: 120px; padding: 8px; border: 1px solid #ccc; border-radius: 4px; }
+        button { 
+            width: 100%; padding: 12px; background-color: #28a745; color: white; 
+            border: none; border-radius: 4px; cursor: pointer; font-size: 16px; font-weight: bold;
+        }
+        button:hover { background-color: #218838; }
+        .result-box { margin-top: 20px; padding: 15px; background: white; border: 1px solid #eee; border-radius: 4px; }
+        small { color: #666; display: block; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>Geolocalización API REST</h2>
+    <p>Laboratorio de Tecnologías Emergentes [cite: 2, 4]</p>
+    
+    <div class="input-group">
+        <label>Origen (Lat, Lon)</label>
+        <input id="oLat" value="-16.414005"> <input id="oLon" value="-71.515773">
+    </div>
+
+    <div class="input-group">
+        <label>Destino (Lat, Lon)</label>
+        <input id="dLat" value="-16.406547">
+        <input id="dLon" value="-71.553179">
+    </div>
+
+    <button onclick="consultar()">Trazar Ruta</button>
+
+    <div class="result-box">
+        <strong>Resultados:</strong>
+        <p>Distancia: <span id="dist">--</span> km</p>
+        <p>Tiempo: <span id="tiempo">--</span> min</p>
+        <hr>
+        <p><strong>Dirección Origen:</strong> <small id="dirO">Esperando consulta...</small></p>
+        <p><strong>Dirección Destino:</strong> <small id="dirD">Esperando consulta...</small></p>
+    </div>
+
+    <p style="font-size:0.8em; color:#888; margin-top:40px;">
+        Datos obtenidos de <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> bajo licencia ODbL[cite: 29, 174].
+    </p>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    // Configuración del Backend (Node.js en puerto 4000)
+    const BACKEND_URL = "http://localhost:4000";
+
+    // Inicializar el mapa centrado en Arequipa [cite: 53, 67]
+    const map = L.map('map').setView([-16.410, -71.535], 14);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    let rutaCapa; 
+    let marcadores = [];
+
+    // Helper para fetch hacia el puerto 4000
+    const api = url => fetch(`${BACKEND_URL}${url}`).then(r => r.json());
+
+    async function consultar() {
+        const oLat = document.getElementById('oLat').value;
+        const oLon = document.getElementById('oLon').value;
+        const dLat = document.getElementById('dLat').value;
+        const dLon = document.getElementById('dLon').value;
+
+        try {
+            // 1. Consultar Geocodificación Inversa (Nominatim vía Backend) [cite: 15, 48]
+            const [resO, resD] = await Promise.all([
+                api(`/api/geocode?lat=${oLat}&lon=${oLon}`),
+                api(`/api/geocode?lat=${dLat}&lon=${dLon}`)
+            ]);
+
+            document.getElementById('dirO').innerText = resO.direccion || "No encontrada";
+            document.getElementById('dirD').innerText = resD.direccion || "No encontrada";
+
+            // 2. Consultar Ruta (OSRM vía Backend) [cite: 16, 125]
+            const resR = await api(`/api/ruta?oLat=${oLat}&oLon=${oLon}&dLat=${dLat}&dLon=${dLon}`);
+
+            if (resR.error) {
+                alert("Error del servidor: " + resR.error);
+                return;
+            }
+
+            document.getElementById('dist').innerText = resR.distancia_km;
+            document.getElementById('tiempo').innerText = resR.duracion_min;
+
+            // 3. Actualizar Mapa con Leaflet
+            limpiarMapa();
+
+            // Dibujar la polilínea de la ruta (GeoJSON) [cite: 42]
+            rutaCapa = L.geoJSON(resR.geometria, {
+                style: { color: '#007bff', weight: 5, opacity: 0.7 }
+            }).addTo(map);
+
+            // Agregar marcadores de inicio y fin
+            marcadores.push(L.marker([oLat, oLon]).addTo(map).bindPopup("Origen"));
+            marcadores.push(L.marker([dLat, dLon]).addTo(map).bindPopup("Destino"));
+
+            // Ajustar el zoom automáticamente para ver toda la ruta
+            map.fitBounds(rutaCapa.getBounds(), { padding: [50, 50] });
+
+        } catch (error) {
+            console.error("Error en la comunicación:", error);
+            alert("No se pudo conectar con el servidor de Node.js en el puerto 4000. ¿Está corriendo?");
+        }
+    }
+
+    function limpiarMapa() {
+        if (rutaCapa) map.removeLayer(rutaCapa);
+        marcadores.forEach(m => map.removeLayer(m));
+        marcadores = [];
+    }
+</script>
+
+</body>
+</html>
