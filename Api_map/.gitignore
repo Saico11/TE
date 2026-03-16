@@ -1,0 +1,11 @@
+# Dependencias de Node (muy pesado para subir)
+node_modules/
+
+# Variables de entorno (contiene tu User-Agent y PORT)
+.env
+
+# Base de datos local (SQLite)
+historial.db
+
+# Logs de errores
+npm-debug.log*
