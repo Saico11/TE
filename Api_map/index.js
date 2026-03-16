@@ -1,17 +1,26 @@
 import 'dotenv/config'; 
 import express from 'express';
 import sqlite3 from 'sqlite3';
+import cors from 'cors'; // Importamos CORS para comunicación entre puertos
 
 const app = express();
 
-// Configuración mediante variables de entorno
-const PORT = process.env.PORT || 3000;
+// Configuraciones desde variables de entorno [cite: 18]
+const PORT = process.env.PORT || 4000; // Usamos 4000 para el backend
 const UA = process.env.USER_AGENT || 'LabUCSM/1.0 (Laboratorio Academico)';
 
-// Inicialización de la Base de Datos SQLite
+// 1. Configuración de CORS
+// Esto permite que el navegador acepte peticiones desde tu servidor Python
+app.use(cors({
+    origin: 'http://localhost:5000',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
+
+// Inicialización de la Base de Datos SQLite [cite: 31]
 const db = new sqlite3.Database('./historial.db');
 
-// Crear tabla de historial si no existe
+// Crear tabla de historial para auditoría interna
 db.run(`CREATE TABLE IF NOT EXISTS historial (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     tipo TEXT,
@@ -21,14 +30,14 @@ db.run(`CREATE TABLE IF NOT EXISTS historial (
 )`);
 
 app.use(express.json());
-app.use(express.static('public'));
+// Servimos archivos estáticos por si acaso, aunque tu front esté en Python
+app.use(express.static('public')); 
 
-// Helper fetch con User-Agent requerido por la política de Nominatim [cite: 33, 56]
+// Helper fetch con User-Agent requerido por la política de Nominatim [cite: 18, 56]
 const osmFetch = url => fetch(url, { headers: { 'User-Agent': UA } }).then(r => r.json());
 
 /**
- * Endpoint 1: Geocodificación Inversa (Nominatim) [cite: 15, 38]
- * Convierte coordenadas en una dirección textual.
+ * Endpoint 1: Geocodificación Inversa (Nominatim)
  */
 app.get('/api/geocode', async (req, res) => {
     const { lat, lon } = req.query;
@@ -44,7 +53,7 @@ app.get('/api/geocode', async (req, res) => {
             pais: data.address?.country
         };
 
-        // Guardado en historial (SQLite)
+        // Guardado silencioso en historial
         db.run("INSERT INTO historial (tipo, entrada, resultado) VALUES (?, ?, ?)", 
             ['GEOCODE', `Lat: ${lat}, Lon: ${lon}`, respuesta.direccion]);
 
@@ -55,8 +64,7 @@ app.get('/api/geocode', async (req, res) => {
 });
 
 /**
- * Endpoint 2: Ruta entre dos puntos (OSRM) [cite: 16, 40]
- * Calcula distancia, duración y geometría.
+ * Endpoint 2: Ruta entre dos puntos (OSRM)
  */
 app.get('/api/ruta', async (req, res) => {
     const { oLat, oLon, dLat, dLon } = req.query;
@@ -78,9 +86,9 @@ app.get('/api/ruta', async (req, res) => {
             geometria: ruta.geometry
         };
 
-        // Guardado en historial (SQLite)
+        // Guardado silencioso en historial
         db.run("INSERT INTO historial (tipo, entrada, resultado) VALUES (?, ?, ?)", 
-            ['RUTA', `De ${oLat},${oLon} a ${dLat},${dLon}`, `${respuesta.distancia_km} km / ${respuesta.duracion_min} min`]);
+            ['RUTA', `De ${oLat},${oLon} a ${dLat},${dLon}`, `${respuesta.distancia_km} km`]);
 
         res.json(respuesta);
     } catch (e) {
@@ -89,6 +97,6 @@ app.get('/api/ruta', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Servidor activo en puerto ${PORT}`);
-    console.log(`Usando User-Agent: ${UA}`);
+    console.log(`Backend Node.js activo en puerto ${PORT}`);
+    console.log(`Aceptando peticiones desde http://localhost:5000 (CORS)`);
 });
